@@ -27,4 +27,4 @@ class Saliency_feat_infer(object):
             saliency_infer[b, selected_clicks] = float(max_class)
             saliency_infer = saliency_infer.long()
 
-        return saliency_infer.cuda()
+        return saliency_infer.cuda() 
