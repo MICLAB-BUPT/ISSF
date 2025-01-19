@@ -2,4 +2,4 @@
 ---
 Our paper is available at [[Paper]](https://arxiv.org/pdf/2303.12332)) 
 
-![img](docs/model.png)
+![img](img/model.png)
