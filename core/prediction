@@ -1,0 +1,53 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.nn.init as torch_init
+import torch
+import torch.nn.functional as F
+
+
+def calculate_l1_norm(f):
+    f_norm = torch.norm(f, p=2, dim=-1, keepdim=True)
+    f = f / (f_norm + 1e-9)
+    return f
+
+class PredictionModel():
+    def __init__(self, ac_center, fg_center, scale_factor):
+        self.ac_center = ac_center
+        self.fg_center = fg_center
+        self.scale_factor = scale_factor
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def PredictionModule(self, x):
+        # normalization
+        norms_x = calculate_l1_norm(x)
+        norms_ac = calculate_l1_norm(self.ac_center)
+        norms_fg = calculate_l1_norm(self.fg_center)
+
+        # generate class scores
+        frm_scrs = torch.einsum('ntd,cd->ntc', [norms_x, norms_ac]) * self.scale_factor
+        frm_fb_scrs = torch.einsum('ntd,kd->ntk', [norms_x, norms_fg]).squeeze(-1) * self.scale_factor
+
+        # generate attention
+        class_agno_att = self.sigmoid(frm_fb_scrs)
+        class_wise_att = self.sigmoid(frm_scrs)
+        class_agno_norm_att = class_agno_att / (torch.sum(class_agno_att, dim=1, keepdim=True) + 1e-5)
+        class_wise_norm_att = class_wise_att / (torch.sum(class_wise_att, dim=1, keepdim=True) + 1e-5)
+
+        ca_vid_feat = torch.einsum('ntd,nt->nd', [x, class_agno_norm_att])
+        cw_vid_feat = torch.einsum('ntd,ntc->ncd', [x, class_wise_norm_att])
+
+        # normalization
+        norms_ca_vid_feat = calculate_l1_norm(ca_vid_feat)
+        norms_cw_vid_feat = calculate_l1_norm(cw_vid_feat)
+
+        # classification
+        frm_scr = torch.einsum('ntd,cd->ntc', [norms_x, norms_ac]) * self.scale_factor
+        ca_vid_scr = torch.einsum('nd,cd->nc', [norms_ca_vid_feat, norms_ac]) * self.scale_factor
+        cw_vid_scr = torch.einsum('ncd,cd->nc', [norms_cw_vid_feat, norms_ac]) * self.scale_factor
+
+        # prediction
+        ca_vid_pred = F.softmax(ca_vid_scr, -1)
+        cw_vid_pred = F.softmax(cw_vid_scr, -1)
+
+        return ca_vid_pred, cw_vid_pred, class_agno_att, frm_scr
