@@ -1,0 +1,112 @@
+from __future__ import print_function
+import os
+import torch
+import argparse
+from .train import Train
+from utils.utils import write_settings_to_file
+
+def main(args):
+    assert args.run_type in ['train', 'test']
+    torch.manual_seed(args.seed)
+    args.gpu_ids = visible_gpu(args.gpus)
+    for folder in ['./ckpt/', './logs/', f'./ckpt/{args.dataset_name}/{args.log_dir}', f'./logs/{args.dataset_name}/{args.log_dir}']:
+        os.makedirs(folder, exist_ok=True)
+    if args.run_type == 'train' or (args.run_type == 'test' and not args.pretrained):
+        write_settings_to_file(args)
+    train = Train(args)
+    train.processing()
+
+
+def visible_gpu(gpus):
+    if isinstance(gpus, int):
+        gpus = [gpus]
+    os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(map(str, gpus))
+    return list(range(len(gpus)))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Train the ISSF')
+
+    # Training parameters
+    parser.add_argument("--batch-size", type=int, default=10,
+                        help="Training batch size")
+    parser.add_argument("--epoch", "--e", type=int, default=180,
+                        help="Number of total training epochs")
+    parser.add_argument("--resume_training", "--r", action='store_true',
+                        help="resume training from a previous checkpoint")
+    parser.add_argument("--lr", type=float, default=0.00005,
+                        help="Initial learning rate")
+    parser.add_argument('--save_every', type=int, default=5,
+                        help='interval for storing model')
+    parser.add_argument('--log-dir', type=str, default="logs",
+                        help='path of log files')
+    parser.add_argument('--gpus', type=int, default=[2], nargs='+',
+                        help='used gpu')
+    parser.add_argument('--decay-type', type=int, default=0,
+                        help='weight decay type (0 for None, 1 for step decay)')
+    parser.add_argument('--changeLR_list', type=int, default=[80, 1000],
+                        help='change lr step')
+    parser.add_argument('--run-type', type=str, default='train',
+                        help='train or test')
+    parser.add_argument('--weight-decay', type=float, default=0.0005,
+                        help='weight deacy (default: 0.001)')
+    parser.add_argument('--dropout', default=0.6,
+                        help='dropout value (default: 0.5)')
+    parser.add_argument('--seed', type=int, default=2,
+                        help='random seed (default: 1)')
+    parser.add_argument('--feature-type', type=str, default='I3D',
+                        help='type of feature to be used (default: I3D)')
+    parser.add_argument('--input-feat', type=int, default=2048,
+                        help='size of input feature')
+    parser.add_argument('--output-feat', type=int, default=2048,
+                        help='size of output feature')
+    parser.add_argument('--class-num', type=int, default=20,
+                        help='number of classes (default: 20)')
+    parser.add_argument('--pretrained', action='store_true',
+                        help='is pretrained model')
+    parser.add_argument('--load-epoch', type=int, default=None,
+                        help='epoch of loaded model')
+
+    # Dirs
+    parser.add_argument('--dataset-dir', default='./dataset/',
+                        help='dataset dir path')
+    parser.add_argument('--dataset-name', default='Thumos14reduced',
+                        help='dataset to train on')
+    parser.add_argument('--video-num', default=200,
+                        help='video number')
+
+    # settings
+    parser.add_argument('--scale-factor', type=float, default=20.0,
+                        help='temperature factors')
+    parser.add_argument('--reduce', type=float, default=4,
+                        help='reduce factors')
+    parser.add_argument('--lamb', type=float, default=0.12,
+                        help='lamb value')
+    parser.add_argument('--T', type=float, default=0.2,
+                        help='number of head')
+    parser.add_argument('--w', type=float, default=0.5,
+                        help='number of head')
+    parser.add_argument('--we', type=int, default=8,
+                        help='initialized weight')
+    parser.add_argument('--sa-nu', type=int, default=9,
+                        help='number of saliency feature')
+    parser.add_argument('--w-a', default=0.1,
+                        help='weight of attention normalization loss')
+    parser.add_argument('--w-b', default=0.2,
+                        help='weight of the classification head')
+    parser.add_argument('--w-s', default=1.0,
+                        help='weight of distillation loss')
+
+
+    # testing paramaters
+    parser.add_argument('--class-threshold', type=float, default=0.1,
+                        help='class threshold for rejection')
+    parser.add_argument('--start-threshold', type=float, default=0.001,
+                        help='start threshold for action localization')
+    parser.add_argument('--end-threshold', type=float, default=0.04,
+                        help='end threshold for action localization')
+    parser.add_argument('--threshold-interval', type=float, default=0.002,
+                        help='threshold interval for action localization')
+
+    args = parser.parse_args()
+    main(args)
