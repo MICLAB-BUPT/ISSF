@@ -5,9 +5,8 @@ import torch.nn as nn
 import torch.nn.init as torch_init
 
 
-
 class Saliency_feat_infer(object):
-    def __init__(self, p=0.1, epoch=None):
+    def __init__(self, p=0.1):
         self.p = p
         self.conv = nn.Conv1d(in_channels=2048, out_channels=2048, kernel_size=3, padding=1).cuda()
 
@@ -21,10 +20,10 @@ class Saliency_feat_infer(object):
         saliency_x = saliency_x.sum(dim=-1)
         _, num_saliency = saliency_x.shape
         median = int(num_saliency * self.p) - 1
-        unsaliency_candidates = torch.topk(saliency_x, k=median, largest=True)[1]
+        saliency_candidates = torch.topk(saliency_x, k=median, largest=True)[1]
 
-        for b in range(unsaliency_candidates.size(0)):
-            selected_clicks = unsaliency_candidates[b]
+        for b in range(saliency_candidates.size(0)):
+            selected_clicks = saliency_candidates[b]
             saliency_infer[b, selected_clicks-1] = float(max_class)
             saliency_infer[b, selected_clicks] = float(max_class)
             saliency_infer = saliency_infer.long()
