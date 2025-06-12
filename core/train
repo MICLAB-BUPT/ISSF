@@ -1,0 +1,233 @@
+from __future__ import print_function
+import os
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
+import numpy as np
+from eval.evaluate import ft_eval, ss_eval
+from arch.saliency import Saliency_Memory
+from arch.model import ISSF
+from data.dataloader import VideoDataset
+from tensorboard_logger import Logger
+
+
+class NormalizedCrossEntropy(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pred, labels):
+        new_labels = labels / (torch.sum(labels, dim=1, keepdim=True) + 1e-8)
+        loss = -1.0 * torch.mean(torch.sum(Variable(new_labels) * torch.log(pred), dim=1), dim=0)
+        return loss
+
+
+class CategoryCrossEntropy(nn.Module):
+    def __init__(self, T):
+        super().__init__()
+        self.T = T
+
+    def forward(self, pred, soft_label):
+        soft_label = F.softmax(soft_label / self.T, -1)
+        soft_label = Variable(soft_label.detach().data, requires_grad=False)
+        loss = -1.0 * torch.sum(Variable(soft_label) * torch.log_softmax(pred / self.T, -1), dim=-1)
+        loss = loss.mean(-1).mean(-1)
+        return loss
+
+
+class AttLoss(nn.Module):
+    def __init__(self, s_factor):
+        super().__init__()
+        self.s = s_factor
+
+    def forward(self, att):
+        t = att.size(1)
+        max_att_values, _ = torch.topk(att, max(int(t // self.s), 1), -1)
+        mean_max_att = max_att_values.mean(1)
+        min_att_values, _ = torch.topk(-att, max(int(t // self.s), 1), -1)
+        mean_min_att = -min_att_values.mean(1)
+        loss = (mean_min_att - mean_max_att).mean(0)
+        return loss
+
+
+class Train():
+    def __init__(self, args):
+        self.args = args
+        log_dir = './logs/' + self.args.dataset_name + '/' + str(self.args.log_dir)
+        self.logger = Logger(log_dir)
+        self.device = torch.device(
+            'cuda:' + str(self.args.gpu_ids[0]) if torch.cuda.is_available() and len(self.args.gpu_ids) > 0 else 'cpu')
+
+        if self.args.dataset_name in ['Thumos14', 'Thumos14reduced']:
+            if self.args.run_type == 'train':
+                self.train_dataset = VideoDataset(self.args, 'train')
+                self.train_data_loader = torch.utils.data.DataLoader(self.train_dataset,
+                                                                     batch_size=1,
+                                                                     shuffle=True,
+                                                                     num_workers=2 * len(self.args.gpu_ids),
+                                                                     drop_last=False)
+                self.train_data_loader_tmp = torch.utils.data.DataLoader(self.train_dataset, batch_size=1,
+                                                                         shuffle=False, drop_last=False)  
+                self.test_data_loader = torch.utils.data.DataLoader(VideoDataset(self.args, 'test'), batch_size=1,
+                                                                    shuffle=False, drop_last=False)
+            elif self.args.run_type == 'test':
+                self.test_data_loader = torch.utils.data.DataLoader(VideoDataset(self.args, 'test'), batch_size=1,
+                                                                    shuffle=False, drop_last=False)
+        else:
+            raise ValueError('Do Not Exist This Dataset')
+
+        self.loss_att = AttLoss(8.0)
+        self.loss_nce = NormalizedCrossEntropy()
+        self.loss_spl = CategoryCrossEntropy(self.args.T)
+        self.model = ISSF(self.args).to(self.device)
+        self.saliency_memory = Saliency_Memory(self.args).to(self.device)
+
+        if len(self.args.gpu_ids) > 1:
+            self.model = nn.DataParallel(self.model, device_ids=self.args.gpu_ids)
+            self.model_module = self.model.module
+        else:
+            self.model_module = self.model
+
+        if self.args.pretrained:
+            model_dir = './ckpt/' + self.args.dataset_name + '/' + str(self.args.log_dir) + '/' + str(
+                self.args.load_epoch) + '.pkl'
+            if os.path.isfile(model_dir):
+                self.model_module.load_state_dict(torch.load(model_dir))
+            else:
+                raise ValueError('Do Not Exist This Pretrained File')
+
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr, betas=[0.9, 0.99],
+                                            weight_decay=self.args.weight_decay)
+
+        if len(self.args.gpu_ids) > 1:
+            self.optimizer = nn.DataParallel(self.optimizer, device_ids=self.args.gpu_ids)
+            self.optimizer_module = self.optimizer.module
+        else:
+            self.optimizer_module = self.optimizer
+
+    def processing(self):
+        if self.args.run_type == 'train':
+            self.train()
+        elif self.args.run_type == 'test':
+            self.val(self.args.load_epoch)
+        else:
+            raise ValueError('Do not Exist This Processing')
+
+    def train(self):
+        print('Start training!')
+        self.model_module.train(mode=True)
+        if self.args.pretrained:
+            epoch_range = range(self.args.load_epoch, self.args.epoch)
+        else:
+            epoch_range = range(self.args.epoch)
+
+        iter = 0
+        step = 0
+        current_lr = self.args.lr
+        loss_recorder = {
+            'cls_fore': 0,
+            'cls_back': 0,
+            'att': 0,
+            'spl': 0,
+        }
+
+        best_avg_map = 0.
+        best_epoch = 0
+        for epoch in epoch_range:
+            for num, sample in enumerate(self.train_data_loader):
+                if self.args.decay_type == 0:
+                    for param_group in self.optimizer_module.param_groups:
+                        param_group['lr'] = current_lr
+                elif self.args.decay_type == 1:
+                    if num == 0:
+                        current_lr = self.Step_decay_lr(epoch)
+                        for param_group in self.optimizer_module.param_groups:
+                            param_group['lr'] = current_lr
+
+                iter = iter + 1
+                np_features = sample['data'].numpy()
+                np_labels = sample['labels'].numpy()
+
+                labels = torch.from_numpy(np_labels).float().to(self.device)
+                features = torch.from_numpy(np_features).float().to(self.device)
+
+                f_labels = torch.cat([labels, torch.zeros(labels.size(0), 1).to(self.device)], -1)
+                b_labels = torch.cat([labels, torch.ones(labels.size(0), 1).to(self.device)], -1)
+                b_out, s_out, sa_out = self.model(features)
+
+                vid_fore_loss = self.loss_nce(b_out[0], f_labels) + self.loss_nce(s_out[0], f_labels)
+                vid_back_loss = self.loss_nce(b_out[1], b_labels) + self.loss_nce(s_out[1], b_labels)
+                vid_att_loss = self.loss_att(b_out[2])
+
+                if epoch > 1:
+                    idxs = np.where(np_labels==1)[0].tolist()
+                    cls_sa = self.saliency_memory._return_queue(idxs).detach()
+                    sim_sa_x = F.softmax(sa_out[0].bmm(cls_sa.permute(0, 2, 1)), dim=-1)
+                    saliency_feat = sim_sa_x.bmm(cls_sa)
+                    m_vid_ca_pred, m_vid_cw_pred, m_frm_fore_att, m_frm_pred = self.model.PredictionModel.PredictionModule(saliency_feat)
+                    vid_fore_loss += 0.5 * self.loss_nce(m_vid_ca_pred, f_labels)
+                    vid_back_loss += 0.5 * self.loss_nce(m_vid_cw_pred, b_labels)
+                    vid_spl_loss = self.loss_spl(b_out[3], m_frm_pred * 0.2 + s_out[3] * 0.8)
+                    self.saliency_memory._update_queue(sa_out[1].squeeze(0), sa_out[2].squeeze(0), idxs, epoch)
+                else:
+                    vid_spl_loss = self.loss_spl(b_out[3], s_out[3])
+                total_loss = vid_fore_loss + vid_back_loss * self.args.w_b \
+                + vid_att_loss * self.args.w_a + vid_spl_loss * self.args.w_s
+
+                loss_recorder['cls_fore'] += vid_fore_loss.item()
+                loss_recorder['cls_back'] += vid_back_loss.item()
+                loss_recorder['att'] += vid_att_loss.item()
+                loss_recorder['spl'] += vid_spl_loss.item()
+                total_loss.backward()
+
+                if iter % self.args.batch_size == 0:
+                    step += 1
+                    print('Epoch: {}/{}, Iter: {:02d}, Lr: {:.6f}'.format(
+                        epoch + 1,
+                        self.args.epoch,
+                        step,
+                        current_lr), end=' ')
+                    for k, v in loss_recorder.items():
+                        loss_recorder[k] = 0
+                    print()
+                    self.optimizer_module.step()
+                    self.optimizer_module.zero_grad()
+
+            if epoch == 1:
+                self.model_module.eval()
+                sa_queue, sa_sc_queue, lbl_queue = ft_eval(self.train_data_loader_tmp, self.model_module, self.args, self.device)
+                self.saliency_memory._init_queue(sa_queue, sa_sc_queue, lbl_queue, epoch)
+                self.model_module.train()
+                self.args.w_s = 0.5
+
+            if (epoch + 1) % self.args.save_every == 0:
+                out_dir = './ckpt/' + self.args.dataset_name + '/' + str(self.args.log_dir) + '/' + str(
+                    epoch + 1) + '.pkl'
+                torch.save(self.model_module.state_dict(), out_dir)
+                self.model_module.eval()
+                avg_map = ss_eval(epoch + 1, self.test_data_loader, self.args, self.logger, self.model_module, self.device)
+                if best_avg_map < avg_map:
+                    best_avg_map = avg_map
+                    best_epoch = epoch
+                    out_best_dir = './ckpt/' + self.args.dataset_name + '/' + str(self.args.log_dir) + '/' + 'best' + '.pkl'
+                    torch.save(self.model_module.state_dict(), out_best_dir)
+                print('best average mAP: ', best_avg_map, 'best epoch: ', best_epoch)
+                self.model_module.train()
+
+    def Step_decay_lr(self, epoch):
+        lr_list = []
+        current_epoch = epoch + 1
+        for i in range(0, len(self.args.changeLR_list) + 1):
+            lr_list.append(self.args.lr * (0.2 ** i))
+        lr_range = self.args.changeLR_list.copy()
+        lr_range.insert(0, 0)
+        lr_range.append(self.args.epoch + 1)
+
+        if len(self.args.changeLR_list) != 0:
+            for i in range(0, len(lr_range) - 1):
+                if lr_range[i + 1] >= current_epoch > lr_range[i]:
+                    lr_step = i
+                    break
+
+        current_lr = lr_list[lr_step]
+        return current_lr
