@@ -10,7 +10,6 @@
      <img alt="GitHub" src="https://img.shields.io/badge/GitHub-Code-green?logo=github" height="20" />
 </a>
 
- 
 <div>
     <a href="#" target="_blank">Wulian Yun </a><sup></sup>,
     <a href="#" target="_blank">Mengshi Qi </a><sup></sup>,
@@ -22,7 +21,12 @@
     <sup> </sup> Beijing Key Laboratory of Intelligent Telecommunications Software and Multimedia, Beijing University of Posts and Telecommunications&emsp;
 </div>
 
+ 
 <img src="img/model.png" width="70%">
+ 
+<p align="justify"><i> Current weakly-supervised temporal action localizationmethods ignore the natural temporal structure of the video that can provide rich information to assist such a generation process. In this paper, we propose a novel weakly-supervised temporal action localization method by inferring salient snippet-feature. First, we design a saliency inference module that exploits the variation relationship between temporal neighbor snippets to discover salient snippet-features, which can reflect the significant dynamic change in the video. Secondly, we introduce a boundary refinement module that enhances salient snippet-features through the information interaction unit. Then, a discrimination enhancement module is introduced to enhance the discriminative nature of snippet-features. Finally, we adopt the refined snippet-features to produce high-fidelity pseudo labels, which could be used to supervise the training of the action localization network. </i></p>
+
+</div>
 
 ## Release
 
