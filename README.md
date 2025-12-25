@@ -1,6 +1,6 @@
 <div align="center" style="font-family: charter;">
 
-<h1><i>ISSF：Weakly-Supervised Temporal Action Localization by Inferring Salient Snippet-Feature</h1>
+<h1><i>Weakly-Supervised Temporal Action Localization by Inferring Salient Snippet-Feature</h1>
 
 <br />
 <a href="[https://arxiv.org/abs/2412.14171](https://arxiv.org/pdf/2303.12332)" target="_blank">
