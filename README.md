@@ -30,7 +30,7 @@
 
 ## Release
 
-- `2024-06` 💾 We released our code.
+- `2025-04` 💾 We released our code.
 - `2024-02` 🚀 Our paper accepted by AAAI 2024.
 
 ## Results
