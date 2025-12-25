@@ -1,17 +1,67 @@
-#  ISSF：Weakly-Supervised Temporal Action Localization by Inferring Salient Snippet-Feature
+<div align="center" style="font-family: charter;">
 
-Our paper is available at [[Paper]](https://arxiv.org/pdf/2303.12332)) 
+<h1><i>ISSF：Weakly-Supervised Temporal Action Localization by Inferring Salient Snippet-Feature</h1>
 
-## Abstract
+<br />
+<a href="[https://arxiv.org/abs/2412.14171](https://arxiv.org/pdf/2303.12332)" target="_blank">
+    <img alt="arXiv" src="https://img.shields.io/badge/arXiv-ISSF-red?logo=arxiv" height="20" />
+</a>
+<a href=" https://github.com/wuli55555/ISSF" target="_blank">
+     <img alt="GitHub" src="https://img.shields.io/badge/GitHub-Code-green?logo=github" height="20" />
+</a>
+
  
->Weakly-supervised temporal action localization aims to locate action regions and identify action categories in untrimmed videos simultaneously by taking only video-level labels as the supervision. Pseudo label generation is a promising strategy to solve the challenging problem, but the current methods ignore the natural temporal structure of the video that can provide rich information to assist such a generation process. In this paper, we propose a novel weakly-supervised temporal action localization method by inferring salient snippet-feature. First, we design a saliency inference module that exploits the variation relationship between temporal neighbor snippets to discover salient snippet-features, which can reflect the significant dynamic change in the video. Secondly, we introduce a boundary refinement module that enhances salient snippet-features through the information interaction unit. Then, a discrimination enhancement module is introduced to enhance the discriminative nature of snippet-features. Finally, we adopt the refined snippet-features to produce high-fidelity pseudo labels, which could be used to supervise the training of the action localization network. Extensive experiments on two publicly available datasets, i.e., THUMOS14 and ActivityNet v1.3, demonstrate our proposed method achieves significant improvements compared to the state-of-the-art methods. 
+<div>
+    <a href="#" target="_blank">Wulian Yun </a><sup></sup>,
+    <a href="#" target="_blank">Mengshi Qi </a><sup></sup>,
+    <a href="#" target="_blank">Chuanming Wang </a><sup></sup>,
+    <a href="#" target="_blank">Huadong Ma </a><sup>*</sup>
+</div>
 
-## Overview
+<div>
+    <sup> </sup> Beijing Key Laboratory of Intelligent Telecommunications Software and Multimedia, Beijing University of Posts and Telecommunications&emsp;
+</div>
 
-![img](img/model.png)
+<img src="img/model.png" width="70%">
+
+## Release
+
+- `2024-06` 💾 We released our code.
+- `2024-02` 🚀 Our paper accepted by AAAI 2024.
+
+## Results
+ We utilize the mean average precision (mAP) as an evaluation metric to assess the performance of our method, consistent with prior state-of-the-art work, and report mAP at different IoU threshold.
+ ![](img/results.png)
 
 ## Data Preparation
-Prepare [THUMOS'14](https://www.crcv.ucf.edu/THUMOS14/) dataset.
+1. Prepare [THUMOS'14](https://www.crcv.ucf.edu/THUMOS14/) dataset.
+    * Download the dataset from the link provided in [this repo](https://github.com/sujoyp/wtalc-pytorch).
+2.  Unzip it under the  ```dataset/ ``` folder.
+
+## Installation
+1. Dependencies
+* python == 3.6.13
+* torch== 1.10.0
+
+2. Create conda environment
+    ```shell script
+    conda create --name ISSF python=3.6.13
+    source activate ISSF
+    pip install -r requirements.txt
+    ```
+
+## Training and Evaluation
+Run the following code to start training.
+```bash
+python main.py --run-type train --dataset-dir ./dataset/ --log-dir logs
+```
+Run the following code to start evaluation.
+```bash
+python main.py --run-type test --dataset-dir ./dataset/ --load-epoch logs/best.pkl
+```
+
+## Acknowledgement
+Our evaluation code is build upon [BaSNet](https://github.com/Pilhyeon/BaSNet-pytorch), [ASM-Loc](https://github.com/boheumd/ASM-Loc), [RSKP](https://github.com/LeonHLJ/RSKP). We acknowledge these team for their valuable contributions to the field of weakly-supervised temporal action localization.
 
 ## Citation
  
