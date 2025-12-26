@@ -61,7 +61,7 @@ python main.py --run-type train --dataset-dir ./dataset/ --log-dir logs
 ```
 Run the following code to start evaluation.
 ```bash
-python main.py --run-type test --dataset-dir ./dataset/ --load-epoch logs/best.pkl
+python main.py --run-type test --dataset-dir ./dataset/  
 ```
 
 ## Acknowledgement
